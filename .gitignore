@@ -37,3 +37,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# AI Model weights (large binary — downloaded at build time via build script)
+model/*.pth
