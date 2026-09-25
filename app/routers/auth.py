@@ -6,7 +6,8 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from jose import jwt
-from passlib.context import CryptContext
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,16 +18,18 @@ from app.schemas import LoginRequest, RegisterRequest, TokenResponse, UserRespon
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 logger = logging.getLogger(__name__)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+password_hasher = PasswordHasher()
 
 
 def _hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return password_hasher.hash(password)
 
 
 def _verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
-
+    try:
+        return password_hasher.verify(hashed, plain)
+    except VerifyMismatchError:
+        return False
 
 def _create_token(user_id: int) -> str:
     expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
