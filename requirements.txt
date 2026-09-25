@@ -1,0 +1,33 @@
+# AgriSense Backend — Cloud ready requirements (with CPU PyTorch)
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Core
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Database — async
+sqlalchemy[asyncio]
+alembic
+asyncpg
+aiosqlite
+
+# Auth
+python-jose[cryptography]
+passlib[bcrypt]
+
+# Validation / config
+pydantic
+pydantic-settings
+python-dotenv
+
+# AI Inference (CPU-only PyTorch)
+torch
+torchvision
+Pillow
+
+# HTTP client
+httpx
+
+# Utilities
+python-dateutil

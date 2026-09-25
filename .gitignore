@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets (never commit .env — use Render environment variables)
+.env
+
+# Database (SQLite dev DB — production uses cloud DB)
+*.db
+*.sqlite3
+
+# Pytest
+.pytest_cache/
+*.pyc
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
