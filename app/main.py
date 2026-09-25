@@ -30,35 +30,51 @@ logger = logging.getLogger("agrisense")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("AgriSense backend starting...")
-    logger.info("Mode: %s | Mock inference: %s", settings.APP_ENV, settings.USE_MOCK_INFERENCE)
-    if settings.USE_MOCK_INFERENCE:
-        logger.warning(
-            "[MOCK MODE ACTIVE] AI inference is mocked. "
-            "Set USE_MOCK_INFERENCE=false and configure INFERENCE_SERVICE_URL for production."
-        )
-    # Create tables and seed data (dev only — production uses Alembic migrations)
-    if settings.is_development:
-        async with engine.begin() as conn:
-            # Import all models so SQLAlchemy sees them
-            from app.models import (  # noqa: F401
-                User, Farm, Field, Crop, Observation,
-                Prediction, SeverityRecord, Advisory, Alert
-            )
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database schema verified.")
+    logger.info(
+        "Mode: %s | Mock inference: %s | Embedded: %s",
+        settings.APP_ENV, settings.USE_MOCK_INFERENCE, settings.USE_EMBEDDED_INFERENCE,
+    )
 
-        from app.database import AsyncSessionLocal
-        from sqlalchemy import select
+    # ── Always create DB tables (create_all is idempotent) ───────────────────
+    # This runs in both development AND production so Render's ephemeral
+    # SQLite DB always has the correct schema on every cold start.
+    async with engine.begin() as conn:
+        from app.models import (  # noqa: F401
+            User, Farm, Field, Crop, Observation,
+            Prediction, SeverityRecord, Advisory, Alert
+        )
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database schema verified (create_all complete).")
+
+    # ── Seed essential crops (idempotent) ────────────────────────────────────
+    from app.database import AsyncSessionLocal
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as session:
+        crops_exist = (await session.execute(select(Crop))).first()
+        if not crops_exist:
+            seed_crops = [
+                Crop(id="grape",      name="Grape",      scientific_name="Vitis vinifera"),
+                Crop(id="grapes",     name="Grapes",     scientific_name="Vitis vinifera"),
+                Crop(id="tomato",     name="Tomato",     scientific_name="Solanum lycopersicum"),
+                Crop(id="wheat",      name="Wheat",      scientific_name="Triticum aestivum"),
+                Crop(id="rice",       name="Rice",       scientific_name="Oryza sativa"),
+                Crop(id="cotton",     name="Cotton",     scientific_name="Gossypium hirsutum"),
+                Crop(id="maize",      name="Maize",      scientific_name="Zea mays"),
+                Crop(id="potato",     name="Potato",     scientific_name="Solanum tuberosum"),
+                Crop(id="sugarcane",  name="Sugarcane",  scientific_name="Saccharum officinarum"),
+            ]
+            session.add_all(seed_crops)
+            await session.commit()
+            logger.info("Crop seed data inserted (%d crops).", len(seed_crops))
+
+    # ── Development-only seed (demo user/farm/field) ─────────────────────────
+    if settings.is_development:
         async with AsyncSessionLocal() as session:
-            crops_exist = (await session.execute(select(Crop))).first()
-            if not crops_exist:
-                dev_crops = [
-                    Crop(id="grape", name="Grape", scientific_name="Vitis vinifera"),
-                    Crop(id="grapes", name="Grapes", scientific_name="Vitis vinifera"),
-                    Crop(id="tomato", name="Tomato", scientific_name="Solanum lycopersicum"),
-                    Crop(id="wheat", name="Wheat", scientific_name="Triticum aestivum"),
-                ]
-                session.add_all(dev_crops)
+            from app.models import User, Farm, Field
+            demo_exists = (await session.execute(
+                select(User).where(User.email == "farmer@agrisense.io")
+            )).first()
+            if not demo_exists:
                 dev_user = User(
                     full_name="Demo Farmer",
                     email="farmer@agrisense.io",
@@ -85,6 +101,17 @@ async def lifespan(app: FastAPI):
                 session.add(dev_field)
                 await session.commit()
                 logger.info("Development seed data created.")
+
+    # ── Load embedded AI model (production cloud deployment) ─────────────────
+    if settings.USE_EMBEDDED_INFERENCE:
+        from app.services.embedded_inference import EmbeddedInferenceService
+        svc = EmbeddedInferenceService()
+        svc.load_model()
+        if not EmbeddedInferenceService._is_ready:
+            logger.error("Embedded model failed to load: %s", EmbeddedInferenceService._load_error)
+        else:
+            logger.info("Embedded AI model loaded and ready.")
+
     yield
     await engine.dispose()
     logger.info("AgriSense backend stopped.")
